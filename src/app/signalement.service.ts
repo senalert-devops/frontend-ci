@@ -8,17 +8,26 @@ export const TYPES = ['Rue bouchée', 'Canal bouché', 'Caniveau bouché'];
 export const COULEURS: Record<Statut, string> = {
   'Signalé': '#D97706', 'Vérifié': '#059669', 'En traitement': '#EA580C', 'Résolu': '#0F4C3A', 'Rejeté': '#DC2626',
 };
-export const ZONES = [
-  { n: 'Parcelles Assainies', x: 200, y: 80 }, { n: 'Guédiawaye', x: 360, y: 70 },
-  { n: 'Pikine', x: 310, y: 190 }, { n: 'Keur Massar', x: 480, y: 170 },
-  { n: 'Rufisque', x: 520, y: 310 },
+// Centres approximatifs des communes (GPS). La commune d'un signalement est la plus proche.
+const CENTRES = [
+  { n: 'Parcelles Assainies', latitude: 14.76, longitude: -17.44 },
+  { n: 'Guédiawaye', latitude: 14.7695, longitude: -17.4 },
+  { n: 'Pikine', latitude: 14.7549, longitude: -17.3908 },
+  { n: 'Keur Massar', latitude: 14.7833, longitude: -17.3167 },
+  { n: 'Rufisque', latitude: 14.7157, longitude: -17.2733 },
 ];
-export const communeDe = (x: number, y: number) =>
-  ZONES.reduce((a, z) => (Math.hypot(z.x - x, z.y - y) < Math.hypot(a.x - x, a.y - y) ? z : a)).n;
+export const ZONES = CENTRES.map(c => ({ n: c.n, ...depuisGps(c.latitude, c.longitude) }));
+const COS_LAT = Math.cos((14.75 * Math.PI) / 180); // 1° de longitude est plus court que 1° de latitude
+export const communeDe = (x: number, y: number) => {
+  const p = versGps(x, y);
+  const dist = (c: { latitude: number; longitude: number }) =>
+    Math.hypot(c.latitude - p.latitude, (c.longitude - p.longitude) * COS_LAT);
+  return CENTRES.reduce((a, c) => (dist(c) < dist(a) ? c : a)).n;
+};
 
 export interface Etape { statut: Statut; date: string; note: string }
 
-/** Signalement tel que l'affiche l'interface : la position est un point (x, y) du plan de la carte. */
+/** Signalement tel que l'affiche l'interface : la position est un point (x, y), voir geo.ts. */
 export interface Signalement {
   id: string; type: string; description: string; x: number; y: number;
   statut: Statut; photo?: string; apres?: string; historique: Etape[];

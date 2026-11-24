@@ -1,12 +1,14 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { dansLaZone, depuisGps } from '../geo';
 import { CarteComponent } from '../ui/carte.component';
+import { IcoComponent } from '../ui/ico.component';
 import { communeDe, SignalementService, TYPES } from '../signalement.service';
 
 @Component({
   selector: 'app-signaler',
-  imports: [FormsModule, RouterLink, CarteComponent],
+  imports: [FormsModule, RouterLink, CarteComponent, IcoComponent],
   template: `
     <div class="page" [class.etroit]="code()">
       @if (code()) {
@@ -43,7 +45,10 @@ import { communeDe, SignalementService, TYPES } from '../signalement.service';
           </section>
           <section>
             <label>Position</label>
-            <p class="mut" style="margin-top:0">Cliquez sur la carte pour placer le problème. Dans la version finale, le GPS du navigateur remplira ce champ.</p>
+            <p class="mut" style="margin-top:0">Utilisez votre position, ou cliquez sur la carte pour placer le problème.</p>
+            <p><button class="main" (click)="localiser()" [disabled]="recherche()">
+              <app-ico n="map-pin"/> {{ recherche() ? 'Localisation en cours…' : 'Utiliser ma position' }}
+            </button></p>
             <app-carte [repere]="position()" (choisirPosition)="position.set($event)"/>
             <p class="mut">{{ libellePosition() }}</p>
           </section>
@@ -54,10 +59,11 @@ import { communeDe, SignalementService, TYPES } from '../signalement.service';
 })
 export class SignalerPage {
   svc = inject(SignalementService);
+  carte = viewChild(CarteComponent);
   types = TYPES;
   type = signal(TYPES[0]); description = signal(''); photo = signal('');
   position = signal<{ x: number; y: number } | null>(null);
-  erreur = signal(''); code = signal(''); copie = signal(false);
+  erreur = signal(''); code = signal(''); copie = signal(false); recherche = signal(false);
 
   async copier() {
     try { await navigator.clipboard.writeText(this.code()); this.copie.set(true); } catch { /* copie indisponible */ }
@@ -66,6 +72,36 @@ export class SignalerPage {
   libellePosition() {
     const p = this.position();
     return p ? 'Position choisie : ' + communeDe(p.x, p.y) : 'Aucune position choisie';
+  }
+
+  /** Position de l'appareil (GPS du téléphone, ou Wi-Fi / réseau sur un ordinateur). */
+  localiser() {
+    if (!('geolocation' in navigator)) {
+      this.erreur.set('La localisation n’est pas disponible sur cet appareil : cliquez sur la carte.');
+      return;
+    }
+    this.erreur.set('');
+    this.recherche.set(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        this.recherche.set(false);
+        const { latitude, longitude } = pos.coords;
+        if (!dansLaZone(latitude, longitude)) {
+          this.erreur.set('Votre position est en dehors de la zone couverte (Dakar et sa banlieue) : cliquez sur la carte pour placer le problème.');
+          return;
+        }
+        const p = depuisGps(latitude, longitude);
+        this.position.set(p);
+        this.carte()?.centrer(p);
+      },
+      err => {
+        this.recherche.set(false);
+        this.erreur.set(err.code === err.PERMISSION_DENIED
+          ? 'Localisation refusée : autorisez-la dans le navigateur, ou cliquez sur la carte.'
+          : 'Position introuvable : cliquez sur la carte.');
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
   }
 
   choisirPhoto(ev: Event) {

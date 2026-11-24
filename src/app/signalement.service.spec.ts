@@ -72,7 +72,8 @@ describe('SignalementService (API)', () => {
     expect('x' in envoi || 'y' in envoi).toBe(false);
     const cree = svc.trouver(id)!;
     expect(cree.statut).toBe('Signalé');
-    expect({ x: cree.x, y: cree.y }).toEqual({ x: 300, y: 200 });
+    expect(cree.x).toBeCloseTo(300, 1);
+    expect(cree.y).toBeCloseTo(200, 1);
   });
 
   it('refuse un mauvais mot de passe administrateur', async () => {
