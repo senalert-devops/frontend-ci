@@ -1,5 +1,5 @@
-// Mode démonstration : données en mémoire, aucun backend nécessaire.
-// Utilisé par `ng serve`, les tests et le déploiement GitLab Pages (site statique).
+// Mode normal : l'application appelle l'API sur /api.
+// En production (nginx) et avec `ng serve` (proxy.conf.json), /api est relayé vers le backend FastAPI.
 export const environment = {
-  apiUrl: null as string | null,
+  apiUrl: '/api',
 };

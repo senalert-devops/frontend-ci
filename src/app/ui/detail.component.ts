@@ -12,7 +12,7 @@ import { COULEURS, communeDe, Signalement, Statut } from '../signalement.service
         </div>
         <p class="mut">{{ r.type }} · {{ commune(r.x, r.y) }}</p>
         @if (r.photo) { <img [src]="r.photo" alt="Photo du signalement"> }
-        @else { <div class="vide">Pas de photo (donnée de démonstration)</div> }
+        @else { <div class="vide">Pas de photo</div> }
         <p>{{ r.description }}</p>
         @if (r.apres) { <p class="mut">Après intervention</p><img [src]="r.apres" alt="Photo après intervention"> }
         <h3>Historique</h3>
