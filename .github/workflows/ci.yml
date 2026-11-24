@@ -1,0 +1,81 @@
+# Pipeline CI du frontend SenAlert (Angular).
+#
+# - Sur chaque push et chaque pull request : installation, tests, build de contrôle.
+# - Sur un push dans main uniquement : construction de l'image Docker, publication sur
+#   Docker Hub (tag du commit + latest), puis déclenchement du déploiement (deployment-cd).
+#
+# À configurer (organisation GitHub) :
+#   variable DOCKERHUB_USER, secrets DOCKERHUB_TOKEN et CD_TRIGGER_TOKEN.
+name: CI - Frontend
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests et build Angular
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Lancer les tests unitaires
+        run: npx ng test --watch=false
+
+      - name: Compiler l'application (configuration docker)
+        run: npx ng build --configuration docker
+
+  publish:
+    name: Image Docker et déploiement
+    needs: test
+    # Uniquement sur un push dans main (pas sur les branches ni les pull requests)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ${{ vars.DOCKERHUB_USER }}/senalert-frontend
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Calculer le tag court du commit
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Se connecter à Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Préparer Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construire et publier l'image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.SHORT_SHA }}
+            ${{ env.IMAGE }}:latest
+
+      # Le déploiement est lancé dans le dépôt deployment-cd (événement frontend-updated)
+      - name: Déclencher le déploiement
+        run: |
+          curl -fsS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.CD_TRIGGER_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository_owner }}/deployment-cd/dispatches" \
+            -d '{"event_type":"frontend-updated"}'
