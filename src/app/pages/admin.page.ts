@@ -21,7 +21,6 @@ import { COULEURS, communeDe, SignalementService, Statut, STATUTS, ZONES } from 
           <label for="u">Identifiant</label><input id="u" [(ngModel)]="u">
           <label for="p">Mot de passe</label><input id="p" type="password" [(ngModel)]="p" (keyup.enter)="connecter()">
           <p><button class="main large" (click)="connecter()">Se connecter</button></p>
-          <p class="mut">Démonstration : admin / demo123 (compte fictif).</p>
         </div>
       </div>
     } @else {
@@ -37,7 +36,7 @@ import { COULEURS, communeDe, SignalementService, Statut, STATUTS, ZONES } from 
           </nav>
           <div class="adm-pied">
             <a routerLink="/"><app-ico n="external"/> Voir l’espace citoyen</a>
-            <button class="sortie" (click)="svc.admin.set(false)"><app-ico n="log-out"/> Déconnexion</button>
+            <button class="sortie" (click)="svc.deconnexion()"><app-ico n="log-out"/> Déconnexion</button>
           </div>
         </aside>
         @if (menu()) { <div class="voile" (click)="menu.set(false)"></div> }
@@ -142,14 +141,14 @@ import { COULEURS, communeDe, SignalementService, Statut, STATUTS, ZONES } from 
 export class AdminPage {
   svc = inject(SignalementService);
   statuts = STATUTS; couleurs = COULEURS; commune = communeDe;
-  u = 'admin'; p = 'demo123';
+  u = ''; p = '';
   vue = signal<'tableau' | 'gestion'>('tableau'); menu = signal(false);
   filtre = signal(''); choix = signal<string | null>(null);
   note = signal(''); motif = signal('Doublon'); apres = signal(''); erreur = signal('');
   visibles = computed(() => this.svc.liste().filter(r => !this.filtre() || r.statut === this.filtre()));
   courant = computed(() => this.svc.liste().find(r => r.id === this.choix()));
   total = computed(() => this.svc.liste().length);
-  recents = computed(() => this.svc.liste().slice(0, 5));
+  recents = computed(() => this.svc.liste().slice(-5).reverse());
   kpis = computed(() => {
     const p = this.svc.parStatut();
     const n = (s: Statut) => p.find(x => x.statut === s)?.n ?? 0;
