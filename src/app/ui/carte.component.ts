@@ -1,50 +1,87 @@
-import { Component, input, output } from '@angular/core';
-import { COULEURS, Signalement, ZONES } from '../signalement.service';
+import { Component, ElementRef, OnDestroy, afterNextRender, effect, input, output, signal, viewChild } from '@angular/core';
+import * as L from 'leaflet';
+import { depuisGps, versGps, ZONE_DAKAR } from '../geo';
+import { COULEURS, Signalement } from '../signalement.service';
+
+// Vraie carte OpenStreetMap (Leaflet) centrée sur la banlieue de Dakar.
+// Les signalements sont affichés à leur position GPS ; un clic sur la carte renvoie la position choisie.
+const CENTRE: L.LatLngTuple = [14.75, -17.37];
+const LIMITES: L.LatLngBoundsExpression = [[ZONE_DAKAR.sud, ZONE_DAKAR.ouest], [ZONE_DAKAR.nord, ZONE_DAKAR.est]];
 
 @Component({
   selector: 'app-carte',
   template: `
     <div class="bloc">
-      <svg class="plan" viewBox="0 0 600 380" role="img" aria-label="Carte schématique de la banlieue de Dakar" (click)="clic($event)">
-        <rect width="600" height="380" fill="#bfe0e8"/>
-        <text transform="translate(52 215) rotate(-90)" text-anchor="middle" font-size="12" font-style="italic" fill="#5d93a1">Océan Atlantique</text>
-        <path d="M130 0H600V380H200Q150 300 170 220Q125 140 130 0Z" fill="#f5f2ea"/>
-        <path d="M150 130H600M240 0Q260 190 330 380M420 0Q430 200 470 380M170 250H600" stroke="#e3ddcd" stroke-width="10" fill="none"/>
-        <path d="M150 130H600M240 0Q260 190 330 380M420 0Q430 200 470 380M170 250H600" stroke="#fff" stroke-width="6" fill="none"/>
-        <path d="M190 340Q300 270 410 300T600 255" stroke="#bfe0e8" stroke-width="6" stroke-dasharray="2 0" fill="none"/>
-        @for (z of zones; track z.n) {
-          <text [attr.x]="z.x" [attr.y]="z.y - 18" text-anchor="middle" font-size="12" font-weight="600" fill="#5d7580"
-                stroke="#f5f2ea" stroke-width="3" paint-order="stroke">{{ z.n }}</text>
-        }
-        @for (r of signalements(); track r.id) {
-          <g class="pt" tabindex="0" role="button" [attr.aria-label]="r.id + ', ' + r.statut"
-             (click)="$event.stopPropagation(); choisirSignalement.emit(r.id)" (keydown.enter)="choisirSignalement.emit(r.id)">
-            @if (r.statut === 'Signalé') { <circle class="pulse" [attr.cx]="r.x" [attr.cy]="r.y" r="14" [attr.fill]="couleurs[r.statut]"/> }
-            <circle class="c" [attr.cx]="r.x" [attr.cy]="r.y" [attr.r]="selection() === r.id ? 13 : 9" [attr.fill]="couleurs[r.statut]"/>
-          </g>
-        }
-        @if (repere(); as p) {
-          <circle [attr.cx]="p.x" [attr.cy]="p.y" r="12" fill="#0b2a35" stroke="#fff" stroke-width="3.5"/>
-          <circle [attr.cx]="p.x" [attr.cy]="p.y" r="4" fill="#fff"/>
-        }
-      </svg>
+      <div #carte class="plan" role="application" aria-label="Carte des signalements (OpenStreetMap)"
+           style="height:420px;width:100%;border-radius:12px;z-index:0"></div>
       <ng-content />
     </div>`,
 })
-export class CarteComponent {
+export class CarteComponent implements OnDestroy {
   signalements = input<Signalement[]>([]);
   selection = input<string | null>(null);
   repere = input<{ x: number; y: number } | null>(null);
   choisirSignalement = output<string>();
   choisirPosition = output<{ x: number; y: number }>();
-  zones = ZONES;
-  couleurs = COULEURS;
 
-  clic(ev: MouseEvent) {
-    const b = (ev.currentTarget as SVGSVGElement).getBoundingClientRect();
-    this.choisirPosition.emit({
-      x: Math.round(((ev.clientX - b.left) / b.width) * 600),
-      y: Math.round(((ev.clientY - b.top) / b.height) * 380),
+  private readonly conteneur = viewChild.required<ElementRef<HTMLDivElement>>('carte');
+  private readonly prete = signal(false);
+  private carte?: L.Map;
+  private points = L.layerGroup();
+  private marqueurRepere?: L.CircleMarker;
+
+  constructor() {
+    afterNextRender(() => {
+      this.carte = L.map(this.conteneur().nativeElement, { center: CENTRE, zoom: 12, minZoom: 10, maxBounds: LIMITES });
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(this.carte);
+      this.points.addTo(this.carte);
+      this.carte.on('click', (ev: L.LeafletMouseEvent) =>
+        this.choisirPosition.emit(depuisGps(ev.latlng.lat, ev.latlng.lng)));
+      this.prete.set(true);
+    });
+
+    // Signalements : un cercle coloré par statut, plus grand pour celui qui est sélectionné
+    effect(() => {
+      if (!this.prete()) return;
+      const choix = this.selection();
+      this.points.clearLayers();
+      for (const r of this.signalements()) {
+        const { latitude, longitude } = versGps(r.x, r.y);
+        L.circleMarker([latitude, longitude], {
+          radius: choix === r.id ? 13 : 9,
+          color: '#ffffff', weight: 2, fillColor: COULEURS[r.statut], fillOpacity: 0.95,
+          bubblingMouseEvents: false,
+        })
+          .bindTooltip(`${r.id} · ${r.statut}`)
+          .on('click', () => this.choisirSignalement.emit(r.id))
+          .addTo(this.points);
+      }
+    });
+
+    // Repère de la position choisie dans le formulaire de signalement
+    effect(() => {
+      if (!this.prete()) return;
+      const p = this.repere();
+      this.marqueurRepere?.remove();
+      this.marqueurRepere = undefined;
+      if (p) {
+        const { latitude, longitude } = versGps(p.x, p.y);
+        this.marqueurRepere = L.circleMarker([latitude, longitude], {
+          radius: 12, color: '#ffffff', weight: 3.5, fillColor: '#0b2a35', fillOpacity: 1,
+        }).addTo(this.carte!);
+      }
     });
   }
+
+  /** Centre la carte sur une position et rapproche la vue (utilisé après « Utiliser ma position »). */
+  centrer(p: { x: number; y: number }) {
+    if (!this.carte) return;
+    const { latitude, longitude } = versGps(p.x, p.y);
+    this.carte.setView([latitude, longitude], Math.max(this.carte.getZoom(), 15));
+  }
+
+  ngOnDestroy() { this.carte?.remove(); }
 }

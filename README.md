@@ -25,9 +25,9 @@ src/
   app/
     app.ts                    barre de navigation
     signalement.service.ts    appels à l'API, connexion administrateur
-    geo.ts                    plan de la carte <-> coordonnées GPS
+    geo.ts                    coordonnées GPS <-> repère (x, y) des pages
     pages/                    accueil, signaler, suivre, admin
-    ui/                       carte, detail, logo, icônes
+    ui/                       carte (Leaflet / OpenStreetMap), detail, logo, icônes
 proxy.conf.json               relais de /api vers le backend pour `ng serve`
 Dockerfile · nginx.conf       image de production
 ```
@@ -40,9 +40,13 @@ L'application ne contient ni données de démonstration ni identifiants. Elle ap
 - la connexion administrateur est vérifiée par le backend : identifiant `ADMIN_USER` et mot de passe `ADMIN_PASSWORD` du Secret Kubernetes (créé par `deployment-cd` à partir des secrets GitHub) ;
 - le jeton renvoyé par le backend est gardé en mémoire et envoyé à chaque changement de statut. Il expire au bout de 8 heures : l'application revient alors à l'écran de connexion.
 
-### Position
+### Carte et position
 
-Le plan de la carte est schématique (banlieue de Dakar, `x` de 0 à 600 et `y` de 0 à 380). `geo.ts` le convertit en `latitude` et `longitude` (degrés WGS84) avant d'envoyer le signalement, car l'API enregistre une position GPS et refuse tout ce qui est hors du Sénégal. À la lecture, la conversion inverse replace le point sur le plan. Avec une carte réelle (Leaflet, OpenStreetMap), on enverrait directement les coordonnées GPS.
+La carte est une vraie carte **OpenStreetMap** affichée avec la bibliothèque Leaflet (`ui/carte.component.ts`), centrée sur la banlieue de Dakar. Les signalements y sont placés à leur position GPS, colorés selon leur statut. Un clic sur la carte choisit la position d'un nouveau signalement ; l'API l'enregistre en `latitude` et `longitude` (degrés WGS84) et refuse tout ce qui est hors du Sénégal.
+
+`geo.ts` convertit la latitude et la longitude en un repère interne `(x, y)` utilisé par les pages pour calculer la commune (la plus proche des centres de Parcelles Assainies, Guédiawaye, Pikine, Keur Massar et Rufisque). La conversion est linéaire et sans arrondi, la précision GPS est conservée.
+
+Les fonds de carte sont chargés depuis `tile.openstreetmap.org` : le navigateur doit avoir accès à Internet. Pour utiliser Google Maps à la place, il faudrait une clé d'API Google (avec compte de facturation) à fournir comme secret.
 
 ## Développement
 
